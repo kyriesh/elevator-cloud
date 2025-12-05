@@ -8,17 +8,17 @@
         <div class="icon">🏢</div>
       </div>
       <div class="stat-card online">
-        <div class="label">电梯在线</div>
-        <div class="value">{{ stats.elevatorOnline }}</div>
-        <div class="sub">共 {{ stats.elevatorTotal }} 台</div>
+        <div class="label">设备在线</div>
+        <div class="value">{{ stats.online }}</div>
+        <div class="sub">在线率 {{ stats.onlineRate }}%</div>
       </div>
       <div class="stat-card maintenance">
-        <div class="label">维修中</div>
-        <div class="value">{{ stats.maintenance }}</div>
+        <div class="label">离线/维修</div>
+        <div class="value">{{ stats.offline }}</div>
         <div class="icon">🛠️</div>
       </div>
       <div class="stat-card fault">
-        <div class="label">严重故障</div>
+        <div class="label">故障告警</div>
         <div class="value">{{ stats.fault }}</div>
         <div class="icon animate-pulse">🚨</div>
       </div>
@@ -41,7 +41,7 @@
           <div v-for="(item, index) in riskList" :key="index" class="risk-item">
             <div class="rank-idx">{{ index + 1 }}</div>
             <div class="risk-info">
-              <div class="risk-name" @click="goToDetailById(item.id, 'Elevator')" style="cursor: pointer;">{{ item.name }}</div>
+              <div class="risk-name" @click="goToDetailById(item.id)" style="cursor: pointer;">{{ item.name }}</div>
               <div class="risk-loc">{{ item.location }}</div>
             </div>
             <div class="risk-score">
@@ -57,12 +57,13 @@
       <div class="section-header">
         <div class="section-title">📋 实时设备状态列表</div>
         <div class="filters">
-          <el-input v-model="search" placeholder="搜索ID/名称..." size="small" style="width: 200px" class="dark-input"/>
+          <el-input v-model="search" placeholder="搜索编号/名称..." size="small" style="width: 200px" class="dark-input"/>
           <el-radio-group v-model="filterStatus" size="small" class="dark-radio">
             <el-radio-button label="ALL">全部</el-radio-button>
             <el-radio-button label="ONLINE">在线</el-radio-button>
             <el-radio-button label="FAULT">故障</el-radio-button>
           </el-radio-group>
+          <el-button type="primary" size="small" icon="Refresh" @click="fetchDevices" :loading="loading">刷新</el-button>
         </div>
       </div>
       
@@ -70,10 +71,12 @@
         :data="filteredList" 
         style="width: 100%" 
         height="300"
-        :row-class-name="tableRowClassName"
+        v-loading="loading"
+        element-loading-background="rgba(0, 0, 0, 0.5)"
         header-row-class-name="dark-header"
       >
-        <el-table-column prop="id" label="设备ID" width="120" />
+        <el-table-column prop="deviceCode" label="设备编号" width="120" />
+        
         <el-table-column label="设备名称" min-width="180">
           <template #default="{ row }">
             <span :class="{'text-blue': row.type==='Elevator', 'text-purple': row.type==='Gateway'}">
@@ -83,18 +86,18 @@
             </span>
           </template>
         </el-table-column>
+        
         <el-table-column prop="type" label="类型" width="120" />
+        <el-table-column prop="brand" label="品牌" width="120" />
+        
         <el-table-column prop="status" label="状态" width="120">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.status)" effect="dark">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="alert" label="当前状态描述" min-width="200">
-          <template #default="{ row }">
-            <span v-if="row.alert" class="text-red"><el-icon><Warning /></el-icon> {{ row.alert }}</span>
-            <span v-else class="text-gray">运行平稳</span>
-          </template>
-        </el-table-column>
+        
+        <el-table-column prop="address" label="部署地址" min-width="200" show-overflow-tooltip />
+        
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="goToDetail(row)">详情 ></el-button>
@@ -108,49 +111,9 @@
         <div class="section-title text-red">🔔 全局告警实时监控中心</div>
         <div class="filters">
            <el-checkbox v-model="onlyUnresolved" label="仅看未恢复" border size="small" style="margin-right: 10px; color: #cbd5e1;" />
-           <el-button type="danger" size="small" plain icon="Download">导出日志</el-button>
         </div>
       </div>
-
-      <el-table 
-        :data="filteredAlarms" 
-        style="width: 100%" 
-        height="350"
-        header-row-class-name="dark-header"
-      >
-        <el-table-column prop="time" label="发生时间" width="180" />
-        <el-table-column prop="level" label="等级" width="100">
-          <template #default="{ row }">
-            <el-tag :type="row.level === '严重' ? 'danger' : 'warning'" effect="dark">{{ row.level }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="deviceName" label="关联设备" width="180">
-          <template #default="{ row }">
-            <span class="device-link" @click="goToDetailById(row.deviceId, 'Elevator')">{{ row.deviceName }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="code" label="错误码" width="100">
-          <template #default="{ row }">
-            <span class="font-mono">{{ row.code }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="content" label="告警内容" min-width="250" />
-        <el-table-column prop="status" label="当前状态" width="120">
-          <template #default="{ row }">
-            <span :class="row.status === '未恢复' ? 'text-red blink-text' : 'text-green'">
-              <el-icon v-if="row.status === '未恢复'"><CircleClose /></el-icon>
-              <el-icon v-else><CircleCheck /></el-icon>
-              {{ row.status }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="处理" width="100" fixed="right">
-          <template #default="{ row }">
-            <el-button v-if="row.status==='未恢复'" type="danger" size="small" plain>派单</el-button>
-            <el-button v-else type="info" size="small" text disabled>已归档</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <div style="color: #64748b; padding: 20px; text-align: center;">(告警日志模块数据暂未对接数据库)</div>
     </div>
 
   </div>
@@ -159,70 +122,77 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import axios from 'axios' // 引入 axios
 import * as echarts from 'echarts'
+import { ElMessage } from 'element-plus'
+import { API_BASE_URL } from '@/config'
 
 const router = useRouter()
 const search = ref('')
 const filterStatus = ref('ALL')
-const onlyUnresolved = ref(true) // 默认开启只看未恢复
+const onlyUnresolved = ref(true)
+const loading = ref(false)
 
-// 1. Mock Data: 概览
-const stats = ref({
-  total: 142, elevatorTotal: 120, elevatorOnline: 115, maintenance: 3, fault: 2, gateway: 22
+// 真实设备列表
+const deviceList = ref([])
+
+// 统计数据 (计算属性)
+const stats = computed(() => {
+  const total = deviceList.value.length
+  const online = deviceList.value.filter(d => d.status === '在线').length
+  const fault = deviceList.value.filter(d => d.status === '故障').length
+  const gateway = deviceList.value.filter(d => d.type === 'Gateway').length
+  const offline = total - online
+  
+  return {
+    total,
+    online,
+    fault,
+    offline,
+    gateway,
+    elevatorTotal: total - gateway,
+    elevatorOnline: online, // 简化计算
+    maintenance: offline - fault,
+    onlineRate: total > 0 ? ((online / total) * 100).toFixed(1) : 0
+  }
 })
 
-// 2. Mock Data: 风险排名
-const riskList = ref([
-  { id: 'EL-002', name: '3号楼-货梯-B', location: 'A栋-3单元', score: 65 },
-  { id: 'EL-003', name: '5号楼-消防梯', location: 'B栋-地下', score: 72 },
-  { id: 'EL-004', name: '2号楼-客梯-A', location: 'C栋-大厅', score: 78 },
-  { id: 'GW-001', name: 'NeuronEX-A区', location: 'A栋-机房', score: 82 },
-  { id: 'EL-001', name: '1号楼-客梯-C', location: 'A栋-2单元', score: 88 }
-])
+// --- 核心：从后端获取数据 ---
+const fetchDevices = async () => {
+  loading.value = true
+  try {
+    // 请求 Spring Boot 接口
+    const res = await axios.get(`${API_BASE_URL}/devices`)
+    deviceList.value = res.data
+    ElMessage.success('设备数据同步成功')
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('连接后端失败，请检查服务是否启动')
+    // 失败时使用兜底 Mock 数据，方便演示
+    deviceList.value = [
+      { deviceCode: 'EL-MOCK-01', name: '演示电梯(离线)', type: 'Elevator', status: '离线', brand: 'Mock', address: '本地演示' }
+    ]
+  } finally {
+    loading.value = false
+  }
+}
 
-// 3. Mock Data: 设备列表
-const deviceList = ref([
-  { id: 'EL-001', name: '1号楼-客梯-A', type: 'Elevator', status: '运行中', alert: '' },
-  { id: 'EL-002', name: '3号楼-货梯-B', type: 'Elevator', status: '故障中', alert: 'E51 门锁回路断开' },
-  { id: 'GW-001', name: 'NeuronEX-A区', type: 'Gateway', status: '运行中', alert: '' },
-  { id: 'EL-003', name: '5号楼-消防梯', type: 'Elevator', status: '维修中', alert: '正在进行季度保养' },
-  { id: 'EL-004', name: '2号楼-客梯-A', type: 'Elevator', status: '运行中', alert: '震动轻微异常' },
-  { id: 'GW-002', name: 'NeuronEX-B区', type: 'Gateway', status: '在线', alert: '' },
-])
-
-// 4. Mock Data: 全局告警日志 (NEW)
-const globalAlarms = ref([
-  { time: '2023-12-01 14:22:05', deviceId: 'EL-002', deviceName: '3号楼-货梯-B', level: '严重', code: 'E51', content: '门锁回路异常断开，电梯困人风险', status: '未恢复' },
-  { time: '2023-12-01 13:15:00', deviceId: 'GW-002', deviceName: 'NeuronEX-B区', level: '警告', code: 'NET_ERR', content: '上行链路丢包率 > 5%', status: '未恢复' },
-  { time: '2023-12-01 10:30:00', deviceId: 'EL-003', deviceName: '5号楼-消防梯', level: '警告', code: 'W02', content: '平层精度偏差 12mm', status: '自动恢复' },
-  { time: '2023-11-30 22:00:00', deviceId: 'EL-004', deviceName: '2号楼-客梯-A', level: '严重', code: 'E30', content: '变频器过热保护', status: '已修复' },
-  { time: '2023-11-30 18:45:12', deviceId: 'EL-001', deviceName: '1号楼-客梯-A', level: '警告', code: 'W10', content: '轿厢照明电压不稳', status: '已修复' },
-  { time: '2023-11-30 09:00:00', deviceId: 'EL-002', deviceName: '3号楼-货梯-B', level: '严重', code: 'E51', content: '门刀卡阻', status: '已修复' },
-])
-
-// --- 计算属性 ---
+// 过滤逻辑
 const filteredList = computed(() => {
   return deviceList.value.filter(d => {
-    const matchSearch = d.name.includes(search.value) || d.id.includes(search.value)
+    // 兼容 id 和 deviceCode 搜索
+    const matchSearch = (d.name && d.name.includes(search.value)) || (d.deviceCode && d.deviceCode.includes(search.value))
     let matchStatus = true
-    if (filterStatus.value === 'ONLINE') matchStatus = d.status === '运行中'
-    if (filterStatus.value === 'FAULT') matchStatus = d.status === '故障中'
+    if (filterStatus.value === 'ONLINE') matchStatus = d.status === '在线'
+    if (filterStatus.value === 'FAULT') matchStatus = d.status === '故障'
     return matchSearch && matchStatus
   })
 })
 
-const filteredAlarms = computed(() => {
-  if (onlyUnresolved.value) {
-    return globalAlarms.value.filter(a => a.status === '未恢复')
-  }
-  return globalAlarms.value
-})
-
-// --- 方法 ---
 const getStatusType = (status) => {
-  if (status === '运行中' || status === '在线') return 'success'
-  if (status === '故障中') return 'danger'
-  return 'warning'
+  if (status === '在线' || status === '运行中') return 'success'
+  if (status === '故障') return 'danger'
+  return 'info' // 离线或其他
 }
 
 const getScoreColor = (score) => {
@@ -232,14 +202,25 @@ const getScoreColor = (score) => {
 }
 
 const goToDetail = (row) => {
-  router.push({ name: 'DeviceDetail', params: { id: row.id }, query: { type: row.type } })
+  // 使用 deviceCode 作为 ID 跳转
+  router.push({ name: 'DeviceDetail', params: { id: row.deviceCode }, query: { type: row.type } })
 }
 
-const goToDetailById = (id, type) => {
-  router.push({ name: 'DeviceDetail', params: { id: id }, query: { type: type || 'Elevator' } })
+// 模拟的 Risk 数据
+const riskList = ref([
+  { id: 'EL-002', name: '3号楼-货梯-B', location: 'A栋-3单元', score: 65 },
+  { id: 'EL-003', name: '5号楼-消防梯', location: 'B栋-地下', score: 72 },
+  { id: 'GW-001', name: 'NeuronEX-A区', location: 'A栋-机房', score: 82 }
+])
+
+const goToDetailById = (id) => {
+  router.push({ name: 'DeviceDetail', params: { id: id }, query: { type: 'Elevator' } })
 }
 
 onMounted(() => {
+  fetchDevices() // 页面加载时请求后端
+  
+  // 初始化图表 (保持不变)
   const chart = echarts.init(document.getElementById('trendChart'))
   chart.setOption({
     grid: { top: 30, right: 20, bottom: 20, left: 40, containLabel: true },
@@ -284,7 +265,6 @@ onMounted(() => {
 .rank-idx { width: 20px; height: 20px; background: #ef4444; color: #fff; text-align: center; line-height: 20px; border-radius: 3px; font-size: 12px; margin-right: 10px; }
 .risk-info { flex: 1; }
 .risk-name { font-size: 14px; color: #cbd5e1; }
-.risk-name:hover { color: #38bdf8; text-decoration: underline; }
 .risk-loc { font-size: 12px; color: #64748b; }
 .risk-score { width: 60px; text-align: right; font-size: 12px; color: #fff; }
 
@@ -295,37 +275,15 @@ onMounted(() => {
 .section-header { display: flex; justify-content: space-between; margin-bottom: 15px; }
 .mt-4 { margin-top: 20px; }
 
-/* 表格深色适配 */
-:deep(.el-table) {
-  background-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(15, 23, 42, 0.5);
-  --el-table-row-hover-bg-color: rgba(56, 189, 248, 0.1);
-  --el-table-border-color: #334155;
-  color: #cbd5e1;
-}
+/* 表格样式 */
+:deep(.el-table) { background-color: transparent; --el-table-tr-bg-color: transparent; --el-table-header-bg-color: rgba(15, 23, 42, 0.5); --el-table-row-hover-bg-color: rgba(56, 189, 248, 0.1); --el-table-border-color: #334155; color: #cbd5e1; }
 :deep(.el-table th.el-table__cell) { background-color: rgba(15, 23, 42, 0.8); color: #94a3b8; }
 :deep(.el-table td.el-table__cell) { border-bottom: 1px solid #334155; }
 :deep(.el-input__wrapper) { background-color: rgba(15, 23, 42, 0.5); box-shadow: 0 0 0 1px #334155 inset; }
 :deep(.el-input__inner) { color: #fff; }
-
-/* 单选框深色适配 */
 :deep(.dark-radio .el-radio-button__inner) { background: transparent; color: #94a3b8; border-color: #334155; }
 :deep(.dark-radio .el-radio-button__original-radio:checked + .el-radio-button__inner) { background: #38bdf8; color: #fff; border-color: #38bdf8; box-shadow: none; }
 
-/* 颜色工具类 */
-.text-blue { color: #38bdf8; }
-.text-purple { color: #a78bfa; }
-.text-red { color: #f87171; }
-.text-gray { color: #64748b; }
-.text-green { color: #34d399; }
-.animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+.text-blue { color: #38bdf8; } .text-purple { color: #a78bfa; } .text-red { color: #f87171; } .text-gray { color: #64748b; } .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
-
-/* 告警日志特有 */
-.device-link { cursor: pointer; color: #38bdf8; text-decoration: underline; }
-.device-link:hover { color: #7dd3fc; }
-.font-mono { font-family: monospace; }
-.blink-text { animation: blink 1.5s infinite; }
-@keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
 </style>

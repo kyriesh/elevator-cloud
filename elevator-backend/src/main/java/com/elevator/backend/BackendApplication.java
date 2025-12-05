@@ -2,13 +2,14 @@ package com.elevator.backend;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-
+import org.springframework.scheduling.annotation.EnableScheduling;
 /**
  * Spring Boot 启动类
  * * @SpringBootApplication 注解等同于 @Configuration + @EnableAutoConfiguration + @ComponentScan
  * 关键点：它会自动扫描当前包（com.elevator.backend）及其所有子包下的组件
  */
 @SpringBootApplication
+@EnableScheduling
 public class BackendApplication {
 
     public static void main(String[] args) {

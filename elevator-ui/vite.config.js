@@ -1,13 +1,22 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import path from 'path' // 引入 Node.js 的 path 模块
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [vue()],
-  // ⬇️ 添加以下 server 配置
+  
+  // ⬇️ 新增：配置路径别名
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src') 
+    }
+  },
+
+  // 之前的 server 配置保持不变
   server: {
-    host: '0.0.0.0', // 允许从外部 IP (如 Windows 宿主机) 访问
-    port: 5173,      // 固定端口，防止自动跳到 5174
-    open: false      // 禁止自动打开 VM 里的浏览器
+    host: '0.0.0.0',
+    port: 5173,
+    open: false
   }
 })
