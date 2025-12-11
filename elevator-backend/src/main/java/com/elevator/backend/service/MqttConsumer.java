@@ -23,10 +23,6 @@ public class MqttConsumer {
     @Value("${mqtt.topic}")
     private String topic;
 
-    // 🟢 核心新增：内存缓存，用于存储所有设备的最新状态
-    // Key: 设备编码 (如 "EL-001")
-    // Value: 最新的一条 JSON 数据
-    // public static 方便 Controller 直接读取
     public static final ConcurrentHashMap<String, JSONObject> LATEST_DATA = new ConcurrentHashMap<>();
 
     @PostConstruct
@@ -36,26 +32,22 @@ public class MqttConsumer {
 
     public void connect() {
         try {
-            // 1. 创建客户端
             MqttClient client = new MqttClient(brokerUrl, clientId, new MemoryPersistence());
-
-            // 2. 连接参数
             MqttConnectOptions options = new MqttConnectOptions();
             options.setCleanSession(true);
-            options.setAutomaticReconnect(true); // 自动重连
-            // options.setUserName("admin"); // 如果EMQX设了密码，请取消注释
-            // options.setPassword("public".toCharArray());
+            options.setAutomaticReconnect(true);
 
-            // 3. 回调处理
             client.setCallback(new MqttCallback() {
                 @Override
                 public void connectionLost(Throwable cause) {
                     System.out.println("❌ MQTT 连接断开: " + cause.getMessage());
+                    cause.printStackTrace();
                 }
 
                 @Override
                 public void messageArrived(String topic, MqttMessage message) {
                     String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
+                    // System.out.println("✅ MQTT 收到消息 | 主题: " + topic + " | 内容: " + payload);
                     handleMessage(topic, payload);
                 }
 
@@ -64,51 +56,46 @@ public class MqttConsumer {
                 }
             });
 
-            // 4. 执行连接
-            System.out.println("🔄 正在连接 EMQX...");
+            System.out.println("🔄 正在连接 EMQX... Broker: " + brokerUrl + ", ClientID: " + clientId);
             client.connect(options);
             client.subscribe(topic);
             System.out.println("✅ Java后端 MQTT 连接成功，监听主题: " + topic);
 
         } catch (MqttException e) {
+            System.err.println("❌ MQTT 连接失败! Broker: " + brokerUrl);
             e.printStackTrace();
         }
     }
 
-    /**
-     * 处理消息核心逻辑
-     */
     private void handleMessage(String topic, String payload) {
         try {
-            // 1. 从主题解析设备ID
-            // Topic: elevator/uplink/EL-001
             String[] parts = topic.split("/");
-            if (parts.length < 3) return;
-            String deviceCode = parts[2]; // 获取 "EL-001"
+            if (parts.length < 2) { // 至少要有两部分才合理
+                System.err.println("⚠️ 消息主题格式不正确，忽略: " + topic);
+                return;
+            }
+            // 🟢 修复：总是取主题的最后一部分作为设备ID
+            // 兼容 "elevator/uplink/EL-001" 和 "/elevator/uplink/EL-001"
+            String deviceCode = parts[parts.length - 1];
 
-            // 2. 解析 JSON
             JSONObject json = JSON.parseObject(payload);
-            JSONObject values = json.getJSONObject("values"); // 获取具体的测点数据
+            JSONObject values = json.getJSONObject("values");
             Long timestamp = json.getLong("timestamp");
 
-            if (values == null) return;
+            if (values == null) {
+                // System.err.println("⚠️ 消息 Payload 中缺少 'values' 字段，忽略。");
+                return;
+            }
 
-            // 3. 🟢 更新内存缓存 (用于前端实时展示，不走数据库，速度快)
-            // 我们把 timestamp 也放进去
             values.put("ts", timestamp);
             LATEST_DATA.put(deviceCode, values);
-
-            // 4. 打印日志 (调试用)
-            // System.out.println("⚡ 收到实时数据 [" + deviceCode + "]: " + values);
-
-            // 5. ❌ 不再写入 IoTDB
-            // 因为我们已经配置了 EMQX 规则引擎直接入库，Java 这里就不需要再写了，避免重复。
-
-            // 6. TODO: 告警判断逻辑 (下一步我们可以在这里做)
-            // checkAlarm(deviceCode, values);
+            
+            // 打印一条成功日志，确认解析正确 (调试完成后可注释掉)
+            // System.out.println("✔️ 更新缓存: Device=" + deviceCode + ", Data=" + values);
 
         } catch (Exception e) {
-            System.err.println("解析消息失败: " + e.getMessage() + " | Payload: " + payload);
+            System.err.println("❌ 解析消息失败: " + e.getMessage() + " | Payload: " + payload);
+            e.printStackTrace();
         }
     }
 }

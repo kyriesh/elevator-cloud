@@ -14,25 +14,29 @@ import java.util.*;
 public class TelemetryService {
 
     private final SessionPool sessionPool;
-    // 注意：这里不用加前缀 root.elevator_cloud，因为我们在 SQL 里拼
     private final String STORAGE_GROUP = "root.elevator_cloud";
 
     public TelemetryService(SessionPool sessionPool) {
         this.sessionPool = sessionPool;
     }
 
-    // 以前的 insertRecord 方法可以删掉，反正不用了
-
     /**
-     * 查询趋势 (使用 ALIGN BY DEVICE 语法，完美解决 null 问题)
+     * 查询趋势
      */
     public Map<String, Object> queryTrend(String deviceCode, String measure) {
-        // SQL: select speed from root.elevator_cloud.EL_001 order by time desc limit 100
-        // 注意：IoTDB 的路径不支持中划线，如果你的 deviceCode 是 EL-001，要转成 EL_001
-        String devicePath = STORAGE_GROUP + "." + deviceCode.replaceAll("-", "_");
+        // 🟢 临时映射：将前端的 EL-001 映射到 IoTDB 中的 Elevator_A
+        // 在正式项目中，这个映射关系应该从 MySQL 数据库中查询
+        String targetDeviceName = deviceCode;
+        if ("EL-001".equals(deviceCode)) targetDeviceName = "Elevator_A";
+        else if ("EL-002".equals(deviceCode)) targetDeviceName = "Elevator_B";
+        else if ("EL-003".equals(deviceCode)) targetDeviceName = "Elevator_C";
+
+        // 🟢 修复：实际表名是 Elevator_A，不包含特殊字符，不需要反引号
+        String devicePath = STORAGE_GROUP + "." + targetDeviceName;
 
         // 查询最近 20 个点，倒序查，然后反转给前端
         String sql = String.format("SELECT %s FROM %s ORDER BY time DESC LIMIT 20", measure, devicePath);
+        System.out.println("✔️ 执行 IoTDB 查询: " + sql);
 
         List<String> times = new ArrayList<>();
         List<Object> values = new ArrayList<>();

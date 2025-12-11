@@ -8,7 +8,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/status")
-@CrossOrigin(origins = "*") // 允许跨域
 public class DeviceStatusController {
 
     // 获取所有设备的最新实时状态快照
